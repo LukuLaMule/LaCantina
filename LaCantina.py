@@ -5,7 +5,7 @@ from pdf2image import convert_from_path
 from PIL import Image
 
 # Discord bot token
-TOKEN = 'Discord Token Bot'
+TOKEN = 'MTI5MDIxMTU2OTgxNjMwOTc3MA.GOzAdn.qTMJzpluQFRr2ti6MLBQBEttnIv1f7a0Ut5smw'
 
 # URL of the menu PDF
 PDF_URL = 'https://webdfd.mines-ales.fr/restau/Menu_Semaine.pdf'
