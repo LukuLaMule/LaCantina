@@ -1,118 +1,103 @@
+import os
 import discord
 import requests
 import asyncio
 from pdf2image import convert_from_path
 from PIL import Image
 
-# Discord bot token
-TOKEN = 'MTI5MDIxMTU2OTgxNjMwOTc3MA.GOzAdn.qTMJzpluQFRr2ti6MLBQBEttnIv1f7a0Ut5smw'
+# Récupérer les variables d'environnement
+TOKEN = os.getenv('DISCORD_TOKEN')
+CHANNEL_IDS = [
+    int(os.getenv('CHANNEL_ID_1')),
+    int(os.getenv('CHANNEL_ID_2'))
+]
 
-# URL of the menu PDF
-PDF_URL = 'https://webdfd.mines-ales.fr/restau/Menu_Semaine.pdf'
+# Vérification si les variables sont bien récupérées
+if not TOKEN:
+    raise ValueError("Le token Discord n'est pas défini dans l'environnement.")
 
-# Variable to store the last modified date
-last_modified_date = None
+if not CHANNEL_IDS or None in CHANNEL_IDS:
+    raise ValueError("Un ou plusieurs Channel IDs ne sont pas définis dans l'environnement.")
 
 # Enabling Intents
 intents = discord.Intents.default()
-intents.message_content = True  # Required to read message content for commands
+intents.message_content = True  # Requis pour lire les messages
 
 client = discord.Client(intents=intents)
 
-# Function to download the PDF from the URL
+# Fonction pour télécharger le PDF
 def download_pdf(url, save_path):
-    print("Downloading PDF...")
+    print("Téléchargement du PDF...")
     response = requests.get(url)
     with open(save_path, 'wb') as file:
         file.write(response.content)
-    print("PDF downloaded.")
+    print("PDF téléchargé.")
 
-# Function to convert the first page of the PDF to an image
+# Fonction pour convertir la première page du PDF en image
 def pdf_to_image(pdf_path, image_path):
-    print("Converting PDF to image...")
+    print("Conversion du PDF en image...")
     try:
-        poppler_path = '/usr/bin'  # Modify this path if Poppler isn't in the system's PATH
+        poppler_path = '/usr/bin'  # Modifier ce chemin si nécessaire
         images = convert_from_path(pdf_path, first_page=1, last_page=1, poppler_path=poppler_path)
         images[0].save(image_path, 'PNG')
-        print("Image saved.")
+        print("Image enregistrée.")
     except Exception as e:
-        print(f"Error during PDF to image conversion: {e}")
+        print(f"Erreur de conversion PDF -> Image : {e}")
 
-# Function to send the image to the Discord channels
-async def send_image_to_channels(channel_ids, image_path):
-    print("Sending image to Discord channels...")
-    for channel_id in channel_ids:
+# Fonction pour envoyer l'image dans les channels Discord
+async def send_image_to_channels(image_path):
+    print("Envoi de l'image sur Discord...")
+    for channel_id in CHANNEL_IDS:
         channel = client.get_channel(channel_id)
         if channel:
             with open(image_path, 'rb') as f:
-                await channel.send("Voici le menu de la semana !", file=discord.File(f, image_path))
-            print(f"Image sent to channel {channel_id}.")
+                await channel.send("Voici le menu de la semaine !", file=discord.File(f, image_path))
+            print(f"Image envoyée dans le channel {channel_id}.")
         else:
-            print(f"Channel with ID {channel_id} not found.")
+            print(f"Channel avec ID {channel_id} introuvable.")
 
-# Function to check the last modified date of the PDF file
-def get_last_modified(url):
-    response = requests.head(url)
-    if 'Last-Modified' in response.headers:
-        return response.headers['Last-Modified']
-    return None
-
-# Periodically check for updates
-async def check_for_updates(channel_ids):
-    global last_modified_date
+# Vérification périodique des mises à jour
+async def check_for_updates():
     await client.wait_until_ready()
+    last_modified_date = None
 
     while True:
-        print("Checking for updates...")
-        current_last_modified = get_last_modified(PDF_URL)
+        print("Vérification des mises à jour...")
+        response = requests.head("https://webdfd.mines-ales.fr/restau/Menu_Semaine.pdf")
+        current_last_modified = response.headers.get('Last-Modified')
 
-        # If the file has been modified since the last check, send the new menu
         if current_last_modified and current_last_modified != last_modified_date:
-            print("LE MENU DE LA SEMAINE, AHHH VWAIMENT !")
-            last_modified_date = current_last_modified  # Update the last modified date
+            print("Le menu a été mis à jour !")
+            last_modified_date = current_last_modified
 
-            # Download the new menu
             pdf_save_path = 'Menu_Semaine.pdf'
             image_save_path = 'Menu_Semaine.png'
-            download_pdf(PDF_URL, pdf_save_path)
-
-            # Convert the first page to an image and send it to all channels
+            download_pdf("https://webdfd.mines-ales.fr/restau/Menu_Semaine.pdf", pdf_save_path)
             pdf_to_image(pdf_save_path, image_save_path)
-            await send_image_to_channels(channel_ids, image_save_path)
+            await send_image_to_channels(image_save_path)
 
-        # Wait for an hour before checking again
-        await asyncio.sleep(3600)
+        await asyncio.sleep(3600)  # Vérifie toutes les heures
 
 @client.event
 async def on_ready():
-    print(f'We have logged in as {client.user}')
+    print(f'Connecté en tant que {client.user}')
 
-# Event listener for message commands
 @client.event
 async def on_message(message):
-    if message.content == '!menu':  # Manually trigger the menu anytime
-        print(f"Command '!menu' received from {message.author}.")
+    if message.content == '!menu':
+        print(f"Commande '!menu' reçue de {message.author}")
         
         pdf_save_path = 'Menu_Semaine.pdf'
         image_save_path = 'Menu_Semaine.png'
 
-        # Download the PDF
-        download_pdf(PDF_URL, pdf_save_path)
-
-        # Convert the first page of the PDF to an image
+        download_pdf("https://webdfd.mines-ales.fr/restau/Menu_Semaine.pdf", pdf_save_path)
         pdf_to_image(pdf_save_path, image_save_path)
+        await send_image_to_channels(image_save_path)
 
-        # Send the image to the channel
-        await send_image_to_channels([message.channel.id], image_save_path)
-
-# Main function to run the bot
 async def main():
-    # List of channel IDs to send the menu to
-    channel_ids = [1242463472437166174, 1016473408164339772]  # Replace CHANNEL_ID_2 with the actual second channel ID
-
     async with client:
-        client.loop.create_task(check_for_updates(channel_ids))  # Periodically check for updates in the background
+        client.loop.create_task(check_for_updates())
         await client.start(TOKEN)
 
-# Run the bot
 asyncio.run(main())
+

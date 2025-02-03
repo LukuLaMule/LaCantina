@@ -5,8 +5,8 @@ services:
     build: .
     container_name: bot-lacantina
     restart: always  # Auto-restart the container on failures
-    environment:
-      - DISCORD_TOKEN=MTI5MDIxMTU2OTgxNjMwOTc3MA.GOzAdn.qTMJzpluQFRr2ti6MLBQBEttnIv1f7a0Ut5smw  # Optional: Pass environment variables
+    env_file:
+      - .env
     volumes:
       - .:/app  # Mount the current directory to the container
     command: python LaCantina.py
