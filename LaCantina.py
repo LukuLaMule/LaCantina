@@ -5,24 +5,22 @@ import asyncio
 from pdf2image import convert_from_path
 from PIL import Image
 
-# Récupérer les variables d'environnement
+# Charger les variables d'environnement
 TOKEN = os.getenv('DISCORD_TOKEN')
 CHANNEL_IDS = [
     int(os.getenv('CHANNEL_ID_1')),
     int(os.getenv('CHANNEL_ID_2'))
 ]
 
-# Vérification si les variables sont bien récupérées
+# Vérification des variables d'environnement
 if not TOKEN:
     raise ValueError("Le token Discord n'est pas défini dans l'environnement.")
-
 if not CHANNEL_IDS or None in CHANNEL_IDS:
     raise ValueError("Un ou plusieurs Channel IDs ne sont pas définis dans l'environnement.")
 
-# Enabling Intents
+# Initialisation du bot avec les intents
 intents = discord.Intents.default()
-intents.message_content = True  # Requis pour lire les messages
-
+intents.message_content = True
 client = discord.Client(intents=intents)
 
 # Fonction pour télécharger le PDF
@@ -37,24 +35,19 @@ def download_pdf(url, save_path):
 def pdf_to_image(pdf_path, image_path):
     print("Conversion du PDF en image...")
     try:
-        poppler_path = '/usr/bin'  # Modifier ce chemin si nécessaire
+        poppler_path = '/usr/bin'  # Modifier si nécessaire
         images = convert_from_path(pdf_path, first_page=1, last_page=1, poppler_path=poppler_path)
         images[0].save(image_path, 'PNG')
         print("Image enregistrée.")
     except Exception as e:
-        print(f"Erreur de conversion PDF -> Image : {e}")
+        print(f"Erreur lors de la conversion PDF -> Image : {e}")
 
-# Fonction pour envoyer l'image dans les channels Discord
-async def send_image_to_channels(image_path):
-    print("Envoi de l'image sur Discord...")
-    for channel_id in CHANNEL_IDS:
-        channel = client.get_channel(channel_id)
-        if channel:
-            with open(image_path, 'rb') as f:
-                await channel.send("Voici le menu de la semaine !", file=discord.File(f, image_path))
-            print(f"Image envoyée dans le channel {channel_id}.")
-        else:
-            print(f"Channel avec ID {channel_id} introuvable.")
+# Fonction pour envoyer l'image dans un seul channel (où la commande a été reçue)
+async def send_image(channel, image_path):
+    print(f"Envoi de l'image dans le channel {channel.id}...")
+    with open(image_path, 'rb') as f:
+        await channel.send("Voici le menu de la semaine !", file=discord.File(f, image_path))
+    print("Image envoyée.")
 
 # Vérification périodique des mises à jour
 async def check_for_updates():
@@ -74,30 +67,42 @@ async def check_for_updates():
             image_save_path = 'Menu_Semaine.png'
             download_pdf("https://webdfd.mines-ales.fr/restau/Menu_Semaine.pdf", pdf_save_path)
             pdf_to_image(pdf_save_path, image_save_path)
-            await send_image_to_channels(image_save_path)
+
+            # Envoyer l'image à tous les channels configurés (mise à jour auto)
+            for channel_id in CHANNEL_IDS:
+                channel = client.get_channel(channel_id)
+                if channel:
+                    await send_image(channel, image_save_path)
 
         await asyncio.sleep(3600)  # Vérifie toutes les heures
 
+# Événement quand le bot est prêt
 @client.event
 async def on_ready():
     print(f'Connecté en tant que {client.user}')
 
+# Événement pour gérer la commande !menu
 @client.event
 async def on_message(message):
-    if message.content == '!menu':
-        print(f"Commande '!menu' reçue de {message.author}")
-        
+    if message.content == '!menu' and not message.author.bot:  # Empêcher le bot de répondre à lui-même
+        print(f"Commande '!menu' reçue de {message.author} dans {message.channel.id}")
+
         pdf_save_path = 'Menu_Semaine.pdf'
         image_save_path = 'Menu_Semaine.png'
 
+        # Télécharger et convertir le menu
         download_pdf("https://webdfd.mines-ales.fr/restau/Menu_Semaine.pdf", pdf_save_path)
         pdf_to_image(pdf_save_path, image_save_path)
-        await send_image_to_channels(image_save_path)
 
+        # Envoyer uniquement dans le channel où la commande a été reçue
+        await send_image(message.channel, image_save_path)
+
+# Fonction principale pour exécuter le bot
 async def main():
     async with client:
-        client.loop.create_task(check_for_updates())
+        client.loop.create_task(check_for_updates())  # Vérifie périodiquement les mises à jour
         await client.start(TOKEN)
 
+# Lancer le bot
 asyncio.run(main())
 
